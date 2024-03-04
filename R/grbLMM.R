@@ -2,7 +2,9 @@ library(lme4)
 library(parallel)
 library(Matrix)
 
-grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE){
+grbLMM = function(y, X, Z, id, 
+                  beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
+                  m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE){
   getV = function(x){solve(x/sigma2 + Qi)}
   getQ = function(x, y){x + tcrossprod(as.numeric(y))}
   cfc = function(x)(length(unique(x)))
@@ -61,20 +63,24 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
   Z22 = crossprod(Z)
   
   ##### set starting values
-  beta = rep(0, p)
+  if (is.null(beta.init)) {
+    beta = rep(0, p)
+  } else {
+    beta = beta.init
+  }
   
   ### offset model for intercept and random structure
   if(q==1){
-    offset = lme(y ~ 1, random = ~ 1 | id, control = lmeControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
+    offset = lmer(y ~ 1, random = ~ 1 | id, control = lmerControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
   }else{
-    offset = lme(y ~ 1, random = ~ Z0[,-1] | id, control = lmeControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
+    offset = lmer(y ~ 1, random = ~ Z0[,-1] | id, control = lmerControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
   }
   
   ### extract starting values
   int = offset$coefficients$fixed[1]
   gamma = Xcor%*%as.numeric(t(offset$coefficients$random$id))
   sigma2 = offset$sigma^2
-  Q = getVarCov(offset)
+  Q = varCorr(offset)
   
   ### construct initial hat matrix
   C = cbind(1, Z)
@@ -122,26 +128,37 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
     ###############################################################
     #### S1 #######################################################
     ###############################################################
-    eta = as.vector(int + X%*%beta + Z%*%gamma)
+    if (is.null(beta.predict)) {
+      eta = as.vector(int + X%*%beta + Z%*%gamma)
+    } else {
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+    }
     u = y - eta
 
-    fits = matrix(0, 3, p)
-    for(r in 1:p){
-      fit = BL[[r]]%*%u
-      fits[1,r] = fit[1]
-      fits[2,r] = fit[2]
-      fits[3,r] = sum((u - cbind(1, X[,r])%*%fit)^2)
+    if (is.null(beta.fit)) {
+      fits = matrix(0, 3, p)
+      for(r in 1:p) {
+        fit = BL[[r]]%*%u
+        fits[1,r] = fit[1]
+        fits[2,r] = fit[2]
+        fits[3,r] = sum((u - cbind(1, X[,r])%*%fit)^2)
+      }
+
+      best = which.min(fits[3,])
+      int = int + ny*fits[1,best]
+      beta[best] = beta[best] + ny*fits[2,best]
+    } else {
+      beta = beta.fit(beta, X, u, ny)
     }
-
-    best = which.min(fits[3,])
-    int = int + ny*fits[1,best]
-    beta[best] = beta[best] + ny*fits[2,best]
-
 
     ###############################################################
     #### S2 #######################################################
     ###############################################################
-    eta = as.vector(int + X%*%beta + Z%*%gamma)
+    if (is.null(beta.predict)) {
+      eta = as.vector(int + X%*%beta + Z%*%gamma)
+    } else {
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+    }
     u = y - eta
 
     D = solve(Q/sigma2)
@@ -152,7 +169,11 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
     ###############################################################
     #### S3 #######################################################
     ###############################################################
-    eta = as.vector(int + X%*%beta + Z%*%gamma)
+    if (is.null(beta.predict)) {
+      eta = as.vector(int + X%*%beta + Z%*%gamma)
+    } else {
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+    }
     
     Qi = solve(Q)
     sigma2 = var(y - eta)
@@ -164,7 +185,11 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
     ### predictive risk computation
     if(!is.null(cv.dat)){
       Qcv = diag(Ncv) + Zcv%*%kronecker(diag(ncv), Q/sigma2)%*%t(Zcv)
-      clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta)^2)
+      if (is.null(beta.predict)) {
+        clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta)^2)
+      } else {
+        clcv = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+      }
     }
 
     if(aic){
@@ -175,9 +200,10 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
       s2 = mean((y - eta)^2)
       AICc[m] = log(s2) + (1 + df/N) / (1 - (df + 2)/N)
     }
-
+    if (beta.keep.all) {
+      BETA = append(BETA, beta)
+    }
     INT = c(INT, int)
-    BETA = rbind(BETA, beta)
     GAMMA = cbind(GAMMA, gamma)
     SIGMA2 = c(SIGMA2, sigma2)
     QQ[[m]] = Q
@@ -185,13 +211,17 @@ grbLMM = function(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE
 
     if(m%%10 == 0){print(m)}
   }
-  
+  if (!beta.keep.all) {
+    BETA = beta
+  }
   structure(list(int = int, beta = beta, sigma2 = sigma2, gamma = gamma, Q = Q, AICc = AICc,
                  INT = INT, BETA = BETA, SIGMA2 = SIGMA2, GAMMA = t(GAMMA), QQ = QQ, CLCV = CLCV,
                  S = S, eta = eta))
 }
 
-cv.grbLMM = function(k, y, X, Z, id, m.stop = 500, ny = .1, cores = 1){
+cv.grbLMM = function(k, y, X, Z, id, 
+                    beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
+                    m.stop = 500, ny = .1, cores = 1){
   id = as.numeric(factor(id, levels = unique(id)))
   id.t = as.numeric(table(id))
   n = length(id.t)
@@ -212,7 +242,9 @@ cv.grbLMM = function(k, y, X, Z, id, m.stop = 500, ny = .1, cores = 1){
                   'Zcv' = as.matrix(Z[sets == k,]),
                   'idcv' = id[sets == k])
     
-    model = grbLMM(y_train, X_train, Z_train, id_train, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
+    model = grbLMM(y_train, X_train, Z_train, id_train,
+                  beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
+                  beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
     
     return(model$CLCV)
   }
@@ -233,7 +265,8 @@ cv.grbLMM = function(k, y, X, Z, id, m.stop = 500, ny = .1, cores = 1){
   pred.risk = colMeans(cv.MAT)
   m.opt = which.min(pred.risk)
   
-  model = grbLMM(y, X, Z, id, m.stop = m.opt)
+  model = grbLMM(y, X, Z, id, beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
+                  beta.keep.all = beta.keep.all, m.stop = m.opt)
   model$m.opt = m.opt
   model$pred = pred.risk
   model$coef = c(model$int, model$beta)

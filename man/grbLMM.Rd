@@ -8,7 +8,7 @@ Function to execute boosting with optional evaluation based on test data
 This function executes the boosting algorithm up to a given value for m.stop and, if specified, evaluates each iterations fit using test data.
 }
 \usage{
-grbLMM(y, X, Z, id, m.stop = 500, ny = .1, cv.dat = NULL)
+grbLMM(y, X, Z, id, beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, m.stop = 500, ny = .1, cv.dat = NULL)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -23,6 +23,18 @@ Numeric design matrix for the random effects, same shape as X with intercepts in
 }
 \item{id}{
 Grouping factor
+}
+\item{beta.fit}{
+Fit function for fixed effects. Pass in wrappers in form of beta.fit(beta, X, u, ny) for decision tree, lasso, etc. Default NULL means using grbLMM baseline.
+}
+\item{beta.predict}{
+Predict function for fixed effects. Pass in wrappers in form of beta.predict(beta, X) for decision tree, lasso, etc. Default NULL means using grbLMM baseline.
+}
+\item{beta.init}{
+Initial value for fixed effects that will be passed into beta.predict and beta.fit during first iteration. Default NULL and can remain unchanged if beta.predict and beta.fit allows NULL input.
+}
+\item{beta.keep.all}{
+Whether return all betas in all iterations. Should be disabled if single beta already stores the previous boosting results.
 }
 \item{m.stop}{
 Given number of total iterations
