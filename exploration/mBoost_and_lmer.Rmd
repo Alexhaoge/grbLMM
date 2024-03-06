@@ -1,0 +1,87 @@
+---
+title: "dataset test"
+author: "ioanna beckman"
+date: "2024-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(devtools)
+devtools::install_github("cgriesbach/grbLMM")
+```
+
+package "pgee"
+data for yeast cycle gene expression more than 1000 observations 99 variabless 4 time points
+sample size 283 
+
+```{r}
+library(PGEE)
+data(yeastG1)
+yeast = yeastG1
+head(yeast)
+```
+
+```{r}
+library(lme4)
+model <- lmer(y ~ time + (1 | id), data = yeast)
+summary(model)
+```
+
+
+```{r}
+library(mboost)
+predictors <- colnames(yeast)[4:ncol(yeast)]
+predictors
+# Define the formula
+formula <- as.formula(paste("y ~ factor(time) + ", paste(predictors, collapse = " + ")))
+
+# Fit the mboost model
+boost_model <- mboost(formula, data = yeast)
+
+summary(boost_model)
+```
+
+```{r}
+
+cv.grbLMM = function(k, y, X,m.stop = 500, ny = .1, cores = 1){
+  ### create an equally sized partition
+  sets = sample(cut(1:n, k, labels = F))
+  print(sets)
+  sets = rep(sets, id.t)
+  
+  ### function for each fold
+  k.fold = function(k){
+    y_train = y[sets != k]
+    X_train = X[sets != k,]
+    cv.dat = list('ycv' = y[sets == k],
+                  'Xcv' = X[sets == k,])
+    
+    #model = grbLMM(y_train, X_train, Z_train, id_train, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
+    
+    #return(model$CLCV)
+  }
+  
+}
+
+
+```
+
+
+```{r}
+predictors = c(predictors, "time")
+X = data[predictors]
+Y = data['y']
+```
+```{r}
+cv.grbLMM(5,Y, X)
+
+
+```
+
+
+
+
