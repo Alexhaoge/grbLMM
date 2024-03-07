@@ -1,4 +1,4 @@
-library(lme4)
+library(nlme)
 library(parallel)
 library(Matrix)
 
@@ -71,16 +71,16 @@ grbLMM = function(y, X, Z, id,
   
   ### offset model for intercept and random structure
   if(q==1){
-    offset = lmer(y ~ 1, random = ~ 1 | id, control = lmerControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
+    offset = lme(y ~ 1, random = ~ 1 | id, control = lmeControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
   }else{
-    offset = lmer(y ~ 1, random = ~ Z0[,-1] | id, control = lmerControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
+    offset = lme(y ~ 1, random = ~ Z0[,-1] | id, control = lmeControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
   }
   
   ### extract starting values
   int = offset$coefficients$fixed[1]
   gamma = Xcor%*%as.numeric(t(offset$coefficients$random$id))
   sigma2 = offset$sigma^2
-  Q = varCorr(offset)
+  Q = getVarCov(offset)
   
   ### construct initial hat matrix
   C = cbind(1, Z)
@@ -188,7 +188,7 @@ grbLMM = function(y, X, Z, id,
       if (is.null(beta.predict)) {
         clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta)^2)
       } else {
-        clcv = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+        clcv = mean((cv.dat$ycv - int - beta.predict(beta, X))^2)
       }
     }
 
@@ -261,7 +261,7 @@ cv.grbLMM = function(k, y, X, Z, id,
   for(i in 1:k){
     cv.MAT = rbind(cv.MAT, cv.ls[[i]])
   }
-  
+  print(dim(cv.MAT))
   pred.risk = colMeans(cv.MAT)
   m.opt = which.min(pred.risk)
   
