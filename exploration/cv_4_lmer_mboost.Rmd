@@ -16,23 +16,24 @@ data(yeastG1)
 yeast = yeastG1
 ```
 
-
-
 ```{r}
+set.seed(1)
+k = 4
+n <- nrow(yeast)
 
-k_fold_samples <- function(n, k){
+k_fold_samples <- function(n, k=4){
 # Initialize a list to store sampled points for each fold
 fold_samples <- vector("list", length = k)
 # Group genes by geneid
 gene_groups <- split(yeast, yeast$id)
-for (i in 1:k){
   for (gene in gene_groups){
-    sampled_indices <- sample(1:nrow(gene), size = 1, replace = FALSE)
+    sampled_indices <- sample(1:nrow(gene), size = 4, replace = FALSE)
     sampled_points <- gene[sampled_indices, ]
-    # Assign sampled points to the current fold
-    fold_samples[[i]] <- rbind(fold_samples[[i]], sampled_points)
+    # Assign sampled points to the each fold
+    for(i in 1:k){
+      fold_samples[[i]] <- rbind(fold_samples[[i]], sampled_points[i, ])
+    }
   }  
-} 
 return(fold_samples)
 }
 
@@ -83,9 +84,11 @@ return(mean(fold_rmse))
 }
 ```
 
+
+
 ```{r}
 set.seed(1)
-k = 10
+k = 4
 n <- nrow(yeast)
 fold_samples = k_fold_samples(n,k)
 lmer_rmse = k_fold_rmse(fold_samples, k, 'lmer')
