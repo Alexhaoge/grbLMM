@@ -1,0 +1,4 @@
+*.textClipping
+.Rhistory
+.RData
+*.Rout

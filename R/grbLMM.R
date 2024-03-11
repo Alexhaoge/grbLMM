@@ -58,9 +58,9 @@ grbLMM = function(y, X, Z, id,
     }
     Z2[[i]] = crossprod(Z[[i]])
   }
-  bZ = Z
+  # bZ = Z
   Z = bdiag(Z)
-  Z22 = crossprod(Z)
+  # Z22 = crossprod(Z)
   
   ##### set starting values
   if (is.null(beta.init)) {
@@ -122,7 +122,7 @@ grbLMM = function(y, X, Z, id,
   BETA = beta
   GAMMA = gamma
   SIGMA2 = sigma2
-  CLCV = l = AIC = AICc = c()
+  CLCV = AICc = c()
   
   for(m in 1:m.stop){
     ###############################################################
@@ -184,7 +184,7 @@ grbLMM = function(y, X, Z, id,
 
     ### predictive risk computation
     if(!is.null(cv.dat)){
-      Qcv = diag(Ncv) + Zcv%*%kronecker(diag(ncv), Q/sigma2)%*%t(Zcv)
+      # Qcv = diag(Ncv) + Zcv%*%kronecker(diag(ncv), Q/sigma2)%*%t(Zcv)
       if (is.null(beta.predict)) {
         clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta)^2)
       } else {
@@ -209,7 +209,7 @@ grbLMM = function(y, X, Z, id,
     QQ[[m]] = Q
     CLCV = c(CLCV, clcv)
 
-    if(m%%10 == 0){print(m)}
+    if(m%%50 == 0){print(m)}
   }
   if (!beta.keep.all) {
     BETA = beta
@@ -219,58 +219,65 @@ grbLMM = function(y, X, Z, id,
                  S = S, eta = eta))
 }
 
-cv.grbLMM = function(k, y, X, Z, id, 
-                    beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
-                    m.stop = 500, ny = .1, cores = 1){
-  id = as.numeric(factor(id, levels = unique(id)))
-  id.t = as.numeric(table(id))
-  n = length(id.t)
+predict.grbLMM <- function(model, X, Z, beta.predict = NULL) {
+  if (is.null(beta.predict)) {
+    res <- beta.predict(mode$beta, X)
+  } else {
+    res <- X %*% model$beta
+  }
+  if (model$int) {
+    res <- res + model$int
+  }
+  res + Z %*% model$gamma
+}
+
+cv.grbLMM <- function(y, X, Z, id, prop,
+                      beta.fit = NULL, beta.predict = NULL, beta.init = NULL,
+                      beta.keep.all = TRUE, m.stop = 500, ny = .1, cores = 1) {
+  p <- ncol(X)
+  q <- ncol(Z)
   
   ### create an equally sized partition
-  sets = sample(cut(1:n, k, labels = F))
-  sets = rep(sets, id.t)
-  
+  kfolds <- k_fold_by_prop(cbind(as.data.frame(X), as.data.frame(Z), y, id), prop)
+  K <- length(kfolds)
+
   ### function for each fold
-  k.fold = function(k){
-    y_train = y[sets != k]
-    X_train = X[sets != k,]
-    Z_train = as.matrix(Z[sets != k,])
-    id_train = id[sets != k]
+  k.fold <- function(k) {
+    cv.dat <- list("ycv" = kfolds[[k]]$y,
+                   "Xcv" = as.matrix(kfolds[[k]][, 1:p]),
+                   "Zcv" = as.matrix(kfolds[[k]][, (p + 1):(p + q)]),
+                   "idcv" = kfolds[[k]]$id)
+    train <- do.call(rbind, kfolds[-k])
     
-    cv.dat = list('ycv' = y[sets == k],
-                  'Xcv' = X[sets == k,],
-                  'Zcv' = as.matrix(Z[sets == k,]),
-                  'idcv' = id[sets == k])
-    
-    model = grbLMM(y_train, X_train, Z_train, id_train,
-                  beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
-                  beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
-    
-    return(model$CLCV)
+    model <- grbLMM(train$y, as.matrix(train[, 1:p]), as.matrix(train[, (p+1):(p+q)]), train$id,
+                    beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
+                    beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
+    model$CLCV
   }
-  
+
   ### execute model on all folds
-  if(cores==1){
-    cv.ls = lapply(1:k, k.fold)
-  }else{
-    cv.ls = mclapply(1:k, k.fold, mc.cores = cores)
+  if (cores == 1) {
+    cv.ls <- lapply(1:K, k.fold)
+  } else {
+    cv.ls <- mclapply(1:K, k.fold, mc.cores = cores)
   }
   
   ### find best performing m.stop averaged over all folds
-  cv.MAT = c()
-  for(i in 1:k){
-    cv.MAT = rbind(cv.MAT, cv.ls[[i]])
+  cv.MAT <- c()
+  for (i in 1:K){
+    cv.MAT <- rbind(cv.MAT, cv.ls[[i]])
   }
-  print(dim(cv.MAT))
-  pred.risk = colMeans(cv.MAT)
-  m.opt = which.min(pred.risk)
+
+  pred.risk <- colMeans(cv.MAT)
+  m.opt <- which.min(pred.risk)
   
-  model = grbLMM(y, X, Z, id, beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
-                  beta.keep.all = beta.keep.all, m.stop = m.opt)
-  model$m.opt = m.opt
-  model$pred = pred.risk
-  model$coef = c(model$int, model$beta)
-  model$folds = cv.MAT
+  model <- grbLMM(y, X, Z, id,
+                 beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init,
+                 beta.keep.all = beta.keep.all, m.stop = m.opt)
+  model$m.opt <- m.opt
+  model$pred <- pred.risk
+  model$coef <- list(int=model$int, beta=model$beta, gamma=model$gamma)
+  model$folds <- cv.MAT
   
-  return(model)
+  model
 }
