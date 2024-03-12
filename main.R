@@ -1,4 +1,5 @@
 library(rpart)
+library(parallel)
 library(glmnet)
 library(PGEE)
 
@@ -51,15 +52,21 @@ id = yeastG1$id
 
 set.seed(202403)
 
+cl = makeCluster(4, outfile="cluster.Rout")
+clusterExport(cl, c("dt.fit", "dt.predict", "dt.init", "rpart"))
+
 # Run decision tree model
 #grbLMM.dt = grbLMM(y, X, Z, id, dt.fit, dt.predict, dt.init,
 #                   beta.keep.all = FALSE)
 cv.grbLMM.dt = cv.grbLMM(y, X, Z, id, 0.25,
                          dt.fit, dt.predict, dt.init,
-                         beta.keep.all = FALSE, cores = 1)
+                         beta.keep.all = FALSE, cores = 4, cl = cl)
 save(cv.grbLMM.dt, file = "../cv.dt.rda")
 
 # Run grbLMM baseline
 #grbLMM.base = grbLMM(y, X, Z, id, beta.keep.all = TRUE)
-cv.grbLMM.base = cv.grbLMM(y, X, Z, id, 0.25, beta.keep.all = TRUE, cores = 1)
+set.seed(202403)
+cv.grbLMM.base = cv.grbLMM(y, X, Z, id, 0.25, beta.keep.all = TRUE, cores = 4, cl = cl)
 save(cv.grbLMM.base, file = "../cv.base.rda")
+
+stopCluster(cl)

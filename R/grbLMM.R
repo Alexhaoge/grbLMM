@@ -2,6 +2,14 @@ library(nlme)
 library(parallel)
 library(Matrix)
 
+.predict_random = function(Z, id, gamm) {
+  q = ncol(Z); n = length(gamm) / q
+  gamm_split = split(gamm, rep(1:n, each = q))
+  sapply(1:nrow(Z), function(i){
+    Z[i, ] %*% gamm_split[[id[i]]]
+  })
+}
+
 grbLMM = function(y, X, Z, id, 
                   beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
                   m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE){
@@ -9,7 +17,7 @@ grbLMM = function(y, X, Z, id,
   getQ = function(x, y){x + tcrossprod(as.numeric(y))}
   cfc = function(x)(length(unique(x)))
   getZ2D = function(x){chol2inv(chol(x + D))}
-  
+
   ### basic definitions
   id = as.numeric(factor(id, levels = unique(id)))
   N = length(id)
@@ -21,7 +29,7 @@ grbLMM = function(y, X, Z, id,
   }
   p = ncol(X)
   q = ncol(Z)
-  
+
   ### extract cluster-constant covariates
   ccc = rep(FALSE, p)
   for(r in 1:p){
@@ -31,7 +39,7 @@ grbLMM = function(y, X, Z, id,
   Xsw = X[,ccc]
   Xcor = list()
   Xcor[[1]] = Xcc%*%solve(crossprod(Xcc))%*%t(Xcc)
-  
+
   if(q>1){
     for(s in 2:q){
       x = matrix(rep(1, n), n, 1)
@@ -43,7 +51,7 @@ grbLMM = function(y, X, Z, id,
   p2 = rep(seq(1, q*n, n), n) + rep(0:(n-1), each = q)
   P1 = sparseMatrix(seq_along(p1), p1)
   P2 = sparseMatrix(seq_along(p2), p2)
-  
+
   Xcor = bdiag(Xcor)
   Xcor = P2%*%(diag(n*q) - Xcor)%*%P1
   
@@ -61,7 +69,7 @@ grbLMM = function(y, X, Z, id,
   # bZ = Z
   Z = bdiag(Z)
   # Z22 = crossprod(Z)
-  
+
   ##### set starting values
   if (is.null(beta.init)) {
     beta = rep(0, p)
@@ -75,19 +83,19 @@ grbLMM = function(y, X, Z, id,
   }else{
     offset = lme(y ~ 1, random = ~ Z0[,-1] | id, control = lmeControl(opt = "optim", singular.ok = TRUE, returnObject = TRUE))
   }
-  
+
   ### extract starting values
   int = offset$coefficients$fixed[1]
-  gamma = Xcor%*%as.numeric(t(offset$coefficients$random$id))
+  gamm = Xcor%*%as.numeric(t(offset$coefficients$random$id))
   sigma2 = offset$sigma^2
   Q = getVarCov(offset)
   
   ### construct initial hat matrix
-  C = cbind(1, Z)
+  CC = cbind(1, Z)
   G = kronecker(diag(n), Q)
   B = as.matrix(bdiag(diag(1), solve(G)))
-  S = list(C%*%bdiag(1,Xcor)%*%solve(crossprod(C) + sigma2*B)%*%t(C))
-  
+  S = list(CC%*%bdiag(1,Xcor)%*%solve(crossprod(CC) + sigma2*B)%*%t(CC))
+
   ### in case of cv
   clcv = NA
   if(!is.null(cv.dat)){
@@ -108,7 +116,7 @@ grbLMM = function(y, X, Z, id,
     
     Zcv = as.matrix(bdiag(Zcv))
   }
-  
+
   ### prepare baselearners
   BL = HM = list()
   for(r in 1:p){
@@ -116,11 +124,11 @@ grbLMM = function(y, X, Z, id,
     BL[[r]] = solve(crossprod(x))%*%t(x)
     HM[[r]] = ny*x%*%BL[[r]]
   }
-  
+
   ### define storing matrices/vectors
   INT = int
   BETA = beta
-  GAMMA = gamma
+  GAMMA = gamm
   SIGMA2 = sigma2
   CLCV = AICc = c()
   
@@ -129,9 +137,9 @@ grbLMM = function(y, X, Z, id,
     #### S1 #######################################################
     ###############################################################
     if (is.null(beta.predict)) {
-      eta = as.vector(int + X%*%beta + Z%*%gamma)
+      eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
@@ -155,40 +163,40 @@ grbLMM = function(y, X, Z, id,
     #### S2 #######################################################
     ###############################################################
     if (is.null(beta.predict)) {
-      eta = as.vector(int + X%*%beta + Z%*%gamma)
+      eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
     D = solve(Q/sigma2)
     Z2D = lapply(Z2, getZ2D)
     rfit = ny*Xcor%*%bdiag(Z2D)%*%t(Z)
-    gamma = gamma + rfit%*%u
+    gamm = gamm + rfit%*%u
 
     ###############################################################
     #### S3 #######################################################
     ###############################################################
     if (is.null(beta.predict)) {
-      eta = as.vector(int + X%*%beta + Z%*%gamma)
+      eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamma)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     
     Qi = solve(Q)
     sigma2 = var(y - eta)
 
     V = lapply(Z2, getV)
-    V = mapply(getQ, V, split(gamma, rep(1:n, each = q)), SIMPLIFY = FALSE)
+    V = mapply(getQ, V, split(gamm, rep(1:n, each = q)), SIMPLIFY = FALSE)
     Q = Reduce("+", V)/n
-
     ### predictive risk computation
     if(!is.null(cv.dat)){
       # Qcv = diag(Ncv) + Zcv%*%kronecker(diag(ncv), Q/sigma2)%*%t(Zcv)
+      random_effect = .predict_random(cv.dat$Zcv, cv.dat$idcv, gamm)
       if (is.null(beta.predict)) {
-        clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta)^2)
+        clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta - random_effect)^2)
       } else {
-        clcv = mean((cv.dat$ycv - int - beta.predict(beta, X))^2)
+        clcv = mean((cv.dat$ycv - beta.predict(beta, cv.dat$Xcv) - random_effect)^2)
       }
     }
 
@@ -204,36 +212,34 @@ grbLMM = function(y, X, Z, id,
       BETA = append(BETA, beta)
     }
     INT = c(INT, int)
-    GAMMA = cbind(GAMMA, gamma)
+    GAMMA = cbind(GAMMA, gamm)
     SIGMA2 = c(SIGMA2, sigma2)
     QQ[[m]] = Q
     CLCV = c(CLCV, clcv)
-
     if(m%%50 == 0){print(m)}
   }
+
   if (!beta.keep.all) {
     BETA = beta
   }
-  structure(list(int = int, beta = beta, sigma2 = sigma2, gamma = gamma, Q = Q, AICc = AICc,
+  structure(list(int = int, beta = beta, sigma2 = sigma2, gamma = gamm, Q = Q, AICc = AICc,
                  INT = INT, BETA = BETA, SIGMA2 = SIGMA2, GAMMA = t(GAMMA), QQ = QQ, CLCV = CLCV,
                  S = S, eta = eta))
 }
 
-predict.grbLMM <- function(model, X, Z, beta.predict = NULL) {
+predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   if (is.null(beta.predict)) {
-    res <- beta.predict(mode$beta, X)
+    res <- X %*% model$beta + model$int
   } else {
-    res <- X %*% model$beta
+    res <- beta.predict(model$beta, X)
   }
-  if (model$int) {
-    res <- res + model$int
-  }
-  res + Z %*% model$gamma
+  res + .predict_random(Z, id, model$gamma)
 }
 
 cv.grbLMM <- function(y, X, Z, id, prop,
                       beta.fit = NULL, beta.predict = NULL, beta.init = NULL,
-                      beta.keep.all = TRUE, m.stop = 500, ny = .1, cores = 1) {
+                      beta.keep.all = TRUE, m.stop = 500, ny = .1,
+                      cores = 1, cl = NULL) {
   p <- ncol(X)
   q <- ncol(Z)
   
@@ -259,7 +265,18 @@ cv.grbLMM <- function(y, X, Z, id, prop,
   if (cores == 1) {
     cv.ls <- lapply(1:K, k.fold)
   } else {
-    cv.ls <- mclapply(1:K, k.fold, mc.cores = cores)
+    if (Sys.info()["sysname"] == "Windows") {
+      if (is.null(cl))
+        stop("Cluster instance must be given by cl on Windows OS if cores > 1")
+      clusterExport(cl, 
+                    c("lme", "lmeControl", "getVarCov",
+                      "sparseMatrix", "crossprod", "tcrossprod", "bdiag", 
+                      "kronecker", "chol2inv", "solve", "t",
+                      ".predict_random", "grbLMM"))
+      cv.ls <- parLapply(cl, 1:K, k.fold)
+    } else {
+      cv.ls <- mclapply(1:K, k.fold, mc.cores = cores)
+    }
   }
   
   ### find best performing m.stop averaged over all folds
