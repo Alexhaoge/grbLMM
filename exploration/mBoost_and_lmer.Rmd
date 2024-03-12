@@ -62,9 +62,9 @@ cv_yeast_helper = function(fold_samples, model_name,
     }
     if(model_name == 'mboost'){
       training_set$time = factor(training_set$time,
-                                 levels = c(3, 4, 12 ,13))
+                                 levels = c(3, 4, 12, 13))
       validation_set$time = factor(validation_set$time,
-                                 levels = c(3, 4, 12 ,13))
+                                 levels = c(3, 4, 12, 13))
       model = mboost(formula_mboost, data = training_set)
       predictions = predict(model, newdata = validation_set)
     }

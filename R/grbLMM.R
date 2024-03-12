@@ -10,9 +10,10 @@ library(Matrix)
   })
 }
 
-grbLMM = function(y, X, Z, id, 
+grbLMM = function(y, X, Z, id,
                   beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
-                  m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE){
+                  m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE,
+                  ...){
   getV = function(x){solve(x/sigma2 + Qi)}
   getQ = function(x, y){x + tcrossprod(as.numeric(y))}
   cfc = function(x)(length(unique(x)))
@@ -139,7 +140,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
@@ -156,7 +157,7 @@ grbLMM = function(y, X, Z, id,
       int = int + ny*fits[1,best]
       beta[best] = beta[best] + ny*fits[2,best]
     } else {
-      beta = beta.fit(beta, X, u, ny)
+      beta = beta.fit(beta, X, u, ny, ...)
     }
 
     ###############################################################
@@ -165,7 +166,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
@@ -180,7 +181,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
     }
     
     Qi = solve(Q)
@@ -196,7 +197,7 @@ grbLMM = function(y, X, Z, id,
       if (is.null(beta.predict)) {
         clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta - random_effect)^2)
       } else {
-        clcv = mean((cv.dat$ycv - beta.predict(beta, cv.dat$Xcv) - random_effect)^2)
+        clcv = mean((cv.dat$ycv - int - beta.predict(beta, cv.dat$Xcv) - random_effect)^2)
       }
     }
 
@@ -229,9 +230,12 @@ grbLMM = function(y, X, Z, id,
 
 predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   if (is.null(beta.predict)) {
-    res <- X %*% model$beta + model$int
+    res <- X %*% model$beta
   } else {
     res <- beta.predict(model$beta, X)
+  }
+  if (!is.null(model$int)) {
+    res <- res + model$int
   }
   res + .predict_random(Z, id, model$gamma)
 }
@@ -239,7 +243,8 @@ predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
 cv.grbLMM <- function(y, X, Z, id, prop,
                       beta.fit = NULL, beta.predict = NULL, beta.init = NULL,
                       beta.keep.all = TRUE, m.stop = 500, ny = .1,
-                      cores = 1, cl = NULL) {
+                      cores = 1, cl = NULL,
+                      ...) {
   p <- ncol(X)
   q <- ncol(Z)
   
@@ -257,7 +262,7 @@ cv.grbLMM <- function(y, X, Z, id, prop,
     
     model <- grbLMM(train$y, as.matrix(train[, 1:p]), as.matrix(train[, (p+1):(p+q)]), train$id,
                     beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
-                    beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
+                    beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat, ...)
     model$CLCV
   }
 

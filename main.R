@@ -5,30 +5,8 @@ library(PGEE)
 
 source("R/grbLMM.R")
 source("R/utils.R")
+source("R/baselearner.R")
 
-# Define wrapper for decision tree
-dt.init = list(lr=list(), model=list())
-dt.predict = function(dt, X) {
-  if (is.null(dt)) {
-    rep(0, nrow(X))
-  } else {
-    yhat = rep(0, nrow(X))
-    for (i in seq_along(dt$model)) {
-      yhat = yhat + dt$lr[[i]] * predict(dt$model[[i]], newdata = as.data.frame(X))
-    }
-    yhat
-  }
-}
-dt.fit = function(dtree, X, y, lr){
-  if (is.null(dtree)) {
-    dtree = list(lr=list(), model=list())
-  }
-  dtree$lr = append(dtree$lr, lr)
-  ds = as.data.frame(X)
-  ds$y = y
-  dtree$model[[length(dtree$model)+1]] <- rpart(y~., ds)
-  dtree
-}
 
 # Define wrapper for lasso
 # lasso.init = NULL
@@ -50,23 +28,33 @@ X = as.matrix(yeastG1[, -c(1, 2, 3)])
 y = yeastG1$y
 id = yeastG1$id
 
-set.seed(202403)
-
 cl = makeCluster(4, outfile="cluster.Rout")
-clusterExport(cl, c("dt.fit", "dt.predict", "dt.init", "rpart"))
+clusterExport(cl, c("dt.fit", "dt.predict", "dt.init", "rpart",
+                    "xgboost", "xgb.fit", "xgb.predict"))
 
 # Run decision tree model
-#grbLMM.dt = grbLMM(y, X, Z, id, dt.fit, dt.predict, dt.init,
-#                   beta.keep.all = FALSE)
-cv.grbLMM.dt = cv.grbLMM(y, X, Z, id, 0.25,
-                         dt.fit, dt.predict, dt.init,
+set.seed(202403)
+cv.grbLMM.dt = cv.grbLMM(y, X, Z, id, 0.25, m.stop = 10,
+                         beta.fit = dt.fit, beta.predict = dt.predict, beta.init = dt.init,
                          beta.keep.all = FALSE, cores = 4, cl = cl)
-save(cv.grbLMM.dt, file = "../cv.dt.rda")
+#save(cv.grbLMM.dt, file = "../cv.dt.rda")
 
 # Run grbLMM baseline
-#grbLMM.base = grbLMM(y, X, Z, id, beta.keep.all = TRUE)
-set.seed(202403)
-cv.grbLMM.base = cv.grbLMM(y, X, Z, id, 0.25, beta.keep.all = TRUE, cores = 4, cl = cl)
-save(cv.grbLMM.base, file = "../cv.base.rda")
+# set.seed(202403)
+# cv.grbLMM.base = cv.grbLMM(y, X, Z, id, 0.25, beta.keep.all = TRUE, cores = 4, cl = cl)
+# save(cv.grbLMM.base, file = "../cv.base.rda")
+
+# Regularization
+# set.seed(202403)
+# cv.grbLMM.l2 = cv.grbLMM(y, X, Z, id, 0.25, m.stop = 500, ny = 0.01,
+#                            beta.fit = xgb.fit, beta.predict = xgb.predict, beta.init = dt.init,
+#                            beta.keep.all = FALSE, cores = 4, cl = cl, lambda = 1, alpha = 0)
+# save(cv.grbLMM.l2, file = "../cv.l2.rda")
+# 
+# set.seed(202403)
+# cv.grbLMM.l1 = cv.grbLMM(y, X, Z, id, 0.25, m.stop = 500, ny = 0.01,
+#                          beta.fit = xgb.fit, beta.predict = xgb.predict, beta.init = dt.init,
+#                          beta.keep.all = FALSE, cores = 4, cl = cl, lambda = 0, alpha = 1)
+# save(cv.grbLMM.l1, file = "../cv.l1.rda")
 
 stopCluster(cl)
