@@ -9,79 +9,112 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
-library(devtools)
-devtools::install_github("cgriesbach/grbLMM")
-```
-
 package "pgee"
 data for yeast cycle gene expression more than 1000 observations 99 variabless 4 time points
 sample size 283 
 
 ```{r}
 library(PGEE)
+library(lme4)
+library(mboost)
 data(yeastG1)
 yeast = yeastG1
-head(yeast)
+# head(yeast)
+source("../R/grbLMM.R")
+source("../R/utils.R")
 ```
 
 ```{r}
-library(lme4)
-model <- lmer(y ~ time + (1 | id), data = yeast)
-summary(model)
-```
-
-
-```{r}
-library(mboost)
-predictors <- colnames(yeast)[4:ncol(yeast)]
-predictors
 # Define the formula
-formula <- as.formula(paste("y ~ factor(time) + ", paste(predictors, collapse = " + ")))
+predictors <- colnames(yeast)[4:ncol(yeast)]
+formula_lmer <- paste("y ~", paste(predictors, collapse = " + "), "+ (1 | id)")
+formula_mboost <- as.formula(paste("y ~ factor(time) + ", paste(predictors, collapse = " + ")))
+```
 
+
+```{r warning=FALSE}
+# Fit the lmer model
+model <- lmer(as.formula(formula_lmer), data = yeast)
+summary(model)
 # Fit the mboost model
-boost_model <- mboost(formula, data = yeast)
-
+boost_model <- mboost(formula_mboost, data = yeast)
 summary(boost_model)
 ```
-
-```{r}
-
-cv.grbLMM = function(k, y, X,m.stop = 500, ny = .1, cores = 1){
-  ### create an equally sized partition
-  sets = sample(cut(1:n, k, labels = F))
-  print(sets)
-  sets = rep(sets, id.t)
-  
-  ### function for each fold
-  k.fold = function(k){
-    y_train = y[sets != k]
-    X_train = X[sets != k,]
-    cv.dat = list('ycv' = y[sets == k],
-                  'Xcv' = X[sets == k,])
-    
-    #model = grbLMM(y_train, X_train, Z_train, id_train, m.stop = m.stop, ny = .1, cv.dat = cv.dat)
-    
-    #return(model$CLCV)
-  }
-  
-}
-
-
-```
-
 
 ```{r}
 predictors = c(predictors, "time")
 X = data[predictors]
 Y = data['y']
 ```
+
 ```{r}
-cv.grbLMM(5,Y, X)
-
-
+cv_yeast_helper = function(fold_samples, model_name, 
+                           model = NULL, beta.predict = NULL) {
+  K = length(fold_samples)
+  fold_mse = numeric(K)
+  for (i in 1:K) {
+    validation_set = fold_samples[[i]]
+    training_set = do.call(rbind, fold_samples[-i])
+  
+    if(model_name == 'lmer'){
+      model = lmer(formula_lmer, data = training_set)
+      predictions = predict(model, newdata = validation_set)
+    }
+    if(model_name == 'mboost'){
+      training_set$time = factor(training_set$time,
+                                 levels = c(3, 4, 12 ,13))
+      validation_set$time = factor(validation_set$time,
+                                 levels = c(3, 4, 12 ,13))
+      model = mboost(formula_mboost, data = training_set)
+      predictions = predict(model, newdata = validation_set)
+    }
+    if (model_name == "grblmm") {
+      predictions = predict.grbLMM(model, 
+                     as.matrix(validation_set[, -c(1, 2, 3)]),
+                     as.matrix(cbind(1, validation_set$time)),
+                     validation_set$id,
+                     beta.predict)
+    }
+  
+    fold_mse[i] <- mean((validation_set$y - predictions)^2)
+  }
+  mean(fold_mse)
+}
 ```
 
 
+```{r}
+set.seed(202403)
+kf = k_fold_by_prop(yeastG1, 0.25)
+```
 
+```{r}
+cv_yeast_helper(kf, "lmer")
+```
+
+```{r}
+cv_yeast_helper(kf, "mboost")
+```
+
+```{r}
+library(rpart)
+dt.predict = function(dt, X) {
+  if (is.null(dt)) {
+    rep(0, nrow(X))
+  } else {
+    yhat = rep(0, nrow(X))
+    for (i in seq_along(dt$model)) {
+      yhat = yhat + dt$lr[[i]] * predict(dt$model[[i]], newdata = as.data.frame(X))
+    }
+    yhat
+  }
+}
+load("../../tmp/cv.dt.rda")
+cv_yeast_helper(kf, "grblmm", cv.grbLMM.dt, dt.predict)
+```
+
+```{r}
+load("../../tmp/cv.base.rda")
+cv_yeast_helper(kf, "grblmm", cv.grbLMM.base)
+```
 
