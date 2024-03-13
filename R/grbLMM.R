@@ -266,7 +266,10 @@ cv.grbLMM <- function(y, X, Z, id, prop,
     model <- grbLMM(train$y, as.matrix(train[, 1:p]), as.matrix(train[, (p+1):(p+q)]), train$id,
                     beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
                     beta.keep.all = beta.keep.all, m.stop = m.stop, ny = ny, cv.dat = cv.dat, ...)
-    rbind(model$TRCV, model$CLCV)
+    ans <- rbind(model$TRCV, model$CLCV)
+    rm(train, cv.dat, model)
+    gc()
+    ans
   }
 
   ### execute model on all folds
@@ -296,7 +299,7 @@ cv.grbLMM <- function(y, X, Z, id, prop,
   }
   train.risk <- colMeans(cv.mse.tr)
   pred.risk <- colMeans(cv.mse.val)
-  m.opt <- which.min(cv.mse.val)
+  m.opt <- which.min(pred.risk)
   
   if (refit) {
     model <- grbLMM(y, X, Z, id,
