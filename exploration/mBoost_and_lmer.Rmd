@@ -15,6 +15,7 @@ sample size 283
 
 ```{r}
 library(PGEE)
+library(nlme)
 library(lme4)
 library(mboost)
 data(yeastG1)
@@ -27,7 +28,7 @@ source("../R/utils.R")
 ```{r}
 # Define the formula
 predictors <- colnames(yeast)[4:ncol(yeast)]
-formula_lmer <- paste("y ~", paste(predictors, collapse = " + "), "+ (1 | id)")
+formula_lmer <- paste("y ~", paste(predictors, collapse = " + "), "+ (1 + time | id)")
 formula_mboost <- as.formula(paste("y ~ factor(time) + ", paste(predictors, collapse = " + ")))
 ```
 
@@ -109,12 +110,15 @@ dt.predict = function(dt, X) {
     yhat
   }
 }
-load("../../tmp/cv.dt.rda")
+```
+
+```{r}
+load("../../cv.dt.rda")
 cv_yeast_helper(kf, "grblmm", cv.grbLMM.dt, dt.predict)
 ```
 
 ```{r}
-load("../../tmp/cv.base.rda")
+load("../../cv.base.rda")
 cv_yeast_helper(kf, "grblmm", cv.grbLMM.base)
 ```
 

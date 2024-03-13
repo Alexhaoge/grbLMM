@@ -131,7 +131,7 @@ grbLMM = function(y, X, Z, id,
   BETA = beta
   GAMMA = gamm
   SIGMA2 = sigma2
-  CLCV = AICc = c()
+  CLCV = TRCV = AICc = c()
   
   for(m in 1:m.stop){
     ###############################################################
@@ -140,7 +140,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
@@ -166,7 +166,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     u = y - eta
 
@@ -181,7 +181,7 @@ grbLMM = function(y, X, Z, id,
     if (is.null(beta.predict)) {
       eta = as.vector(int + X%*%beta + Z%*%gamm)
     } else {
-      eta = as.vector(int + beta.predict(beta, X) + Z%*%gamm)
+      eta = as.vector(beta.predict(beta, X) + Z%*%gamm)
     }
     
     Qi = solve(Q)
@@ -197,10 +197,15 @@ grbLMM = function(y, X, Z, id,
       if (is.null(beta.predict)) {
         clcv = mean((cv.dat$ycv - int - cv.dat$Xcv%*%beta - random_effect)^2)
       } else {
-        clcv = mean((cv.dat$ycv - int - beta.predict(beta, cv.dat$Xcv) - random_effect)^2)
+        clcv = mean((cv.dat$ycv - beta.predict(beta, cv.dat$Xcv) - random_effect)^2)
       }
     }
-
+    random_effect_tr = .predict_random(Z0, id, gamm)
+    if (is.null(beta.predict)) {
+      trcv = mean((y - int - X%*%beta - random_effect_tr)^2)
+    } else {
+      trcv = mean((y - beta.predict(beta, X) - random_effect_tr)^2)
+    }
     if(aic){
       Sma = HM[[best]]
       Smb = Z%*%rfit
@@ -217,6 +222,7 @@ grbLMM = function(y, X, Z, id,
     SIGMA2 = c(SIGMA2, sigma2)
     QQ[[m]] = Q
     CLCV = c(CLCV, clcv)
+    TRCV = c(TRCV, trcv)
     if(m%%50 == 0){print(m)}
   }
 
@@ -225,17 +231,14 @@ grbLMM = function(y, X, Z, id,
   }
   structure(list(int = int, beta = beta, sigma2 = sigma2, gamma = gamm, Q = Q, AICc = AICc,
                  INT = INT, BETA = BETA, SIGMA2 = SIGMA2, GAMMA = t(GAMMA), QQ = QQ, CLCV = CLCV,
-                 S = S, eta = eta))
+                 S = S, eta = eta, TRCV = TRCV))
 }
 
 predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   if (is.null(beta.predict)) {
-    res <- X %*% model$beta
+    res <- X %*% model$beta + model$int
   } else {
     res <- beta.predict(model$beta, X)
-  }
-  if (!is.null(model$int)) {
-    res <- res + model$int
   }
   res + .predict_random(Z, id, model$gamma)
 }
@@ -243,7 +246,7 @@ predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
 cv.grbLMM <- function(y, X, Z, id, prop,
                       beta.fit = NULL, beta.predict = NULL, beta.init = NULL,
                       beta.keep.all = TRUE, m.stop = 500, ny = .1,
-                      cores = 1, cl = NULL,
+                      cores = 1, cl = NULL, refit = FALSE,
                       ...) {
   p <- ncol(X)
   q <- ncol(Z)
@@ -262,8 +265,8 @@ cv.grbLMM <- function(y, X, Z, id, prop,
     
     model <- grbLMM(train$y, as.matrix(train[, 1:p]), as.matrix(train[, (p+1):(p+q)]), train$id,
                     beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init, 
-                    beta.keep.all = beta.keep.all, m.stop = m.stop, ny = .1, cv.dat = cv.dat, ...)
-    model$CLCV
+                    beta.keep.all = beta.keep.all, m.stop = m.stop, ny = ny, cv.dat = cv.dat, ...)
+    rbind(model$TRCV, model$CLCV)
   }
 
   ### execute model on all folds
@@ -285,21 +288,29 @@ cv.grbLMM <- function(y, X, Z, id, prop,
   }
   
   ### find best performing m.stop averaged over all folds
-  cv.MAT <- c()
+  cv.mse.val <- c()
+  cv.mse.tr <- c()
   for (i in 1:K){
-    cv.MAT <- rbind(cv.MAT, cv.ls[[i]])
+    cv.mse.tr <- rbind(cv.mse.tr, cv.ls[[i]][1, ])
+    cv.mse.val <- rbind(cv.mse.val, cv.ls[[i]][2, ])
   }
-
-  pred.risk <- colMeans(cv.MAT)
-  m.opt <- which.min(pred.risk)
+  train.risk <- colMeans(cv.mse.tr)
+  pred.risk <- colMeans(cv.mse.val)
+  m.opt <- which.min(cv.mse.val)
   
-  model <- grbLMM(y, X, Z, id,
-                 beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init,
-                 beta.keep.all = beta.keep.all, m.stop = m.opt)
+  if (refit) {
+    model <- grbLMM(y, X, Z, id,
+                   beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init,
+                   beta.keep.all = beta.keep.all, ny=ny, m.stop = m.opt)
+    model$coef <- list(int=model$int, beta=model$beta, gamma=model$gamma)
+  } else {
+    model = list()
+  }
+  
   model$m.opt <- m.opt
   model$pred <- pred.risk
-  model$coef <- list(int=model$int, beta=model$beta, gamma=model$gamma)
-  model$folds <- cv.MAT
-  
+  model$trainrisk <- train.risk
+  model$valfolds <- cv.mse.val
+  model$trfolds <- cv.mse.tr
   model
 }

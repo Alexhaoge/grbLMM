@@ -43,12 +43,12 @@ xgb.fit = function(xgb, X, y, lr, lambda = 1, alpha = 0){
     xgb = list(lr=list(), model=list())
   }
   xgb$lr = append(xgb$lr, lr)
-  xgb.incr = xgboost(params = list(eta=lr, 
+  xgb.incr = xgboost(params = list(max_depth = 10,
                                    lambda = lambda, 
                                    alpha = alpha),
                      data = X,
                      label = y,
-                     nrounds = 1)
+                     nrounds = 30)
   xgb$model[[length(xgb$model)+1]] <- xgb.incr
   xgb
 }
