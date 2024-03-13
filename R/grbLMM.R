@@ -304,7 +304,7 @@ cv.grbLMM <- function(y, X, Z, id, prop,
   if (refit) {
     model <- grbLMM(y, X, Z, id,
                    beta.fit = beta.fit, beta.predict = beta.predict, beta.init = beta.init,
-                   beta.keep.all = beta.keep.all, ny=ny, m.stop = m.opt)
+                   beta.keep.all = beta.keep.all, ny=ny, m.stop = m.opt, ...)
     model$coef <- list(int=model$int, beta=model$beta, gamma=model$gamma)
   } else {
     model = list()

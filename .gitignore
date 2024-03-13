@@ -3,3 +3,4 @@
 .RData
 *.Rout
 .DS_Store
+.Rproj.user
