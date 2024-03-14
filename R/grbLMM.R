@@ -2,18 +2,6 @@ library(nlme)
 library(parallel)
 library(Matrix)
 
-#' Predict Random Effects
-#' 
-#' Predicts the random effects given the random effect design matrix and the cluster IDs.
-#' 
-#' @param Z Numeric design matrix for the random effects.
-#' @param id Grouping factor.
-#' @param gamm Vector of random effects parameters.
-#' 
-#' @return A vector of predicted random effects.
-#' 
-#' @export
-
 .predict_random = function(Z, id, gamm) {
   q = ncol(Z); n = length(gamm) / q
   gamm_split = split(gamm, rep(1:n, each = q))
@@ -288,6 +276,31 @@ predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   }
   res + .predict_random(Z, id, model$gamma)
 }
+
+
+#' Cross-validated Generalized Randomized Boosted Linear Mixed Models
+#' 
+#' Fits a boosting algorithm for linear mixed models with k-fold cross-validation.
+#' 
+#' @param y The dependent variable.
+#' @param X Numeric design matrix for the fixed effects (no intercept column).
+#' @param Z Numeric design matrix for the random effects, same shape as X with intercepts in the first column.
+#' @param id Grouping factor.
+#' @param prop Proportion of data to use for validation.
+#' @param beta.fit Fit function for fixed effects.
+#' @param beta.predict Predict function for fixed effects.
+#' @param beta.init Initial value for fixed effects.
+#' @param beta.keep.all Whether to return all betas in all iterations.
+#' @param m.stop Given number of total iterations.
+#' @param ny Learning rate, i.e., step length, of the algorithm.
+#' @param cores Number of CPU cores to use for parallel processing.
+#' @param cl Cluster object for parallel processing.
+#' @param refit Whether to refit the model with the optimal number of iterations.
+#' @param ... Additional arguments passed to the fit and predict functions.
+#' 
+#' @return A list containing the model parameters, evaluation metrics, and cross-validation results.
+#' 
+#' @export
 
 cv.grbLMM <- function(y, X, Z, id, prop,
                       beta.fit = NULL, beta.predict = NULL, beta.init = NULL,

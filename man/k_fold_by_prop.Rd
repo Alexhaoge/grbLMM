@@ -18,7 +18,7 @@ A list of length k, where each element is a data frame representing a fold.
 This function splits the input data into k folds for cross-validation, ensuring each subject has complete observations in each fold.
 }
 \examples{
-# Split data with each fold containing 20\% of the data
+# Split data into folds with each fold containing 20\% of the data
 folds <- k_fold_by_prop(dataset, prop = 0.2)
 
 }
