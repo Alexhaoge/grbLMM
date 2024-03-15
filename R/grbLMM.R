@@ -10,6 +10,28 @@ library(Matrix)
   })
 }
 
+#' Generalized Randomized Boosted Linear Mixed Models
+#' 
+#' Fits a boosting algorithm for linear mixed models with optional cross-validation.
+#' 
+#' @param y The dependent variable.
+#' @param X Numeric design matrix for the fixed effects (no intercept column).
+#' @param Z Numeric design matrix for the random effects, same shape as X with intercepts in the first column.
+#' @param id Grouping factor.
+#' @param beta.fit Fit function for fixed effects. Pass in wrappers in form of beta.fit(beta, X, u, ny) for decision tree, lasso, etc. Default NULL means using grbLMM baseline.
+#' @param beta.predict Predict function for fixed effects. Pass in wrappers in form of beta.predict(beta, X) for decision tree, lasso, etc. Default NULL means using grbLMM baseline.
+#' @param beta.init Initial value for fixed effects that will be passed into beta.predict and beta.fit during first iteration. Default NULL and can remain unchanged if beta.predict and beta.fit allows NULL input.
+#' @param beta.keep.all Whether to return all betas in all iterations. Should be disabled if single beta already stores the previous boosting results.
+#' @param m.stop Given number of total iterations.
+#' @param ny Learning rate, i.e., step length, of the algorithm.
+#' @param cv.dat Optional data for evaluation.
+#' @param aic Whether to compute AICc.
+#' @param ... Additional arguments passed to the fit and predict functions.
+#' 
+#' @return A list containing the model parameters and evaluation metrics.
+#' 
+#' @export
+#' 
 grbLMM = function(y, X, Z, id,
                   beta.fit = NULL, beta.predict = NULL, beta.init = NULL, beta.keep.all = TRUE, 
                   m.stop = 500, ny = .1, cv.dat = NULL, aic = FALSE,
@@ -233,7 +255,19 @@ grbLMM = function(y, X, Z, id,
                  INT = INT, BETA = BETA, SIGMA2 = SIGMA2, GAMMA = t(GAMMA), QQ = QQ, CLCV = CLCV,
                  S = S, eta = eta, TRCV = TRCV))
 }
-
+#' Predict Method for Generalized Randomized Boosted Linear Mixed Models
+#' 
+#' Predicts the response variable for a given model and new data.
+#' 
+#' @param model A trained model object returned by \code{\link{grbLMM}}.
+#' @param X Numeric design matrix for the fixed effects (no intercept column).
+#' @param Z Numeric design matrix for the random effects, same shape as X with intercepts in the first column.
+#' @param id Grouping factor.
+#' @param beta.predict Predict function for fixed effects.
+#' 
+#' @return A vector of predicted response values.
+#' 
+#' @export
 predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   if (is.null(beta.predict)) {
     res <- X %*% model$beta + model$int
@@ -242,6 +276,31 @@ predict.grbLMM <- function(model, X, Z, id, beta.predict = NULL) {
   }
   res + .predict_random(Z, id, model$gamma)
 }
+
+
+#' Cross-validated Generalized Randomized Boosted Linear Mixed Models
+#' 
+#' Fits a boosting algorithm for linear mixed models with k-fold cross-validation.
+#' 
+#' @param y The dependent variable.
+#' @param X Numeric design matrix for the fixed effects (no intercept column).
+#' @param Z Numeric design matrix for the random effects, same shape as X with intercepts in the first column.
+#' @param id Grouping factor.
+#' @param prop Proportion of data to use for validation.
+#' @param beta.fit Fit function for fixed effects.
+#' @param beta.predict Predict function for fixed effects.
+#' @param beta.init Initial value for fixed effects.
+#' @param beta.keep.all Whether to return all betas in all iterations.
+#' @param m.stop Given number of total iterations.
+#' @param ny Learning rate, i.e., step length, of the algorithm.
+#' @param cores Number of CPU cores to use for parallel processing.
+#' @param cl Cluster object for parallel processing.
+#' @param refit Whether to refit the model with the optimal number of iterations.
+#' @param ... Additional arguments passed to the fit and predict functions.
+#' 
+#' @return A list containing the model parameters, evaluation metrics, and cross-validation results.
+#' 
+#' @export
 
 cv.grbLMM <- function(y, X, Z, id, prop,
                       beta.fit = NULL, beta.predict = NULL, beta.init = NULL,

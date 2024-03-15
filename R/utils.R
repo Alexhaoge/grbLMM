@@ -1,4 +1,20 @@
 # Require complete observation for each subject
+#' Split Data into k Folds by Proportion
+#'
+#' This function splits the input data into k folds for cross-validation, ensuring each subject has complete observations in each fold.
+#' 
+#' @param ds A data frame containing the dataset to be split. It should have a column 'id' indicating the subject identifiers.
+#' @param prop Proportion of data to be used for each fold (0 < prop < 1).
+#' 
+#' @return A list of length k, where each element is a data frame representing a fold.
+#' 
+#' @examples
+#' # Split data with each fold containing 20% of the data
+#' folds <- k_fold_by_prop(dataset, prop = 0.2)
+#'
+#' @keywords data manipulation
+#' @export
+#'
 k_fold_by_prop <- function(ds, prop) {
   if (prop <= 0 || prop >= 1) {
     stop("Invalid proportion")
